@@ -377,7 +377,7 @@ function Nav({ view, setView, projects }) {
             fontSize: 16, fontWeight: 900, color: "#fff",
           }}>▶</div>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.3 }}>NSG Video Project Tracker</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.3 }}>FrameFlow</div>
             <div style={{ color: "#555", fontSize: 11 }}>Video Production</div>
           </div>
         </div>
@@ -724,10 +724,16 @@ function Modal({ title, onClose, children, width = 500 }) {
 function ProjectDetail({ project, setProjects, onBack }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [proj, setProj] = useState(project);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = (updated) => {
     setProj(updated);
     setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+  };
+
+  const deleteProject = () => {
+    setProjects(prev => prev.filter(p => p.id !== proj.id));
+    onBack();
   };
 
   const tabs = ["overview","tasks","files","team","activity","deliverables"];
@@ -744,11 +750,38 @@ function ProjectDetail({ project, setProjects, onBack }) {
             <span style={{ color: "#6B7280", fontSize: 13 }}>{proj.jobType}</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <select style={{ ...styles.input, width: "auto" }} value={proj.status}
             onChange={e => save({ ...proj, status: e.target.value })}>
             {PROJECT_STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{
+                padding: "8px 14px", borderRadius: 8, border: "1px solid #FECACA",
+                background: "#FEF2F2", color: "#DC2626", fontSize: 13, fontWeight: 600,
+                cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "#FEE2E2"}
+              onMouseLeave={e => e.currentTarget.style.background = "#FEF2F2"}
+            >🗑 Delete</button>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8,
+              background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, padding: "6px 12px" }}>
+              <span style={{ fontSize: 12, color: "#B91C1C", fontWeight: 500 }}>Delete this project?</span>
+              <button onClick={deleteProject}
+                style={{ padding: "5px 12px", borderRadius: 6, border: "none",
+                  background: "#DC2626", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Yes, delete
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E5E7EB",
+                  background: "#fff", color: "#6B7280", fontSize: 12, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1636,8 +1669,8 @@ function Analytics({ projects }) {
 
 // ─── Supabase Config ─────────────────────────────────────────────────────────
 // Paste your Supabase Project URL and anon key here
-const SUPABASE_URL = "https://imnizeygtgmkseiuheeh.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imltbml6ZXlndGdta3NlaXVoZWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODc4NjMsImV4cCI6MjA5NTM2Mzg2M30.tdkTzZgfiGPYQTon0-eOsmoaEVZkREZGEDvkXensmGY";
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
 // Each project is stored as a row: { id, data: {...}, updated_at }
 async function dbLoad() {
@@ -1680,63 +1713,61 @@ const configured = SUPABASE_URL !== "YOUR_SUPABASE_URL";
 
 function App() {
   const [view, setView] = useState("dashboard");
-  // null = still loading, array = ready
-  const [projects, setProjects] = useState(null);
+  const [projects, setProjects] = useState(INITIAL_PROJECTS);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("loading");
-  const loadedRef = React.useRef(false); // true once initial load is complete
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | loading | saving | error
+  const [prevProjects, setPrevProjects] = useState(null);
 
-  // ── On mount: load from Supabase first, fall back to localStorage ──
+  // On mount: load from Supabase (or fall back to localStorage)
   useEffect(() => {
     if (!configured) {
       try {
-        const saved = localStorage.getItem("nsg-video-tracker_local");
-        setProjects(saved ? JSON.parse(saved) : INITIAL_PROJECTS);
-      } catch {
-        setProjects(INITIAL_PROJECTS);
-      }
-      setSyncStatus("idle");
-      loadedRef.current = true;
+        const saved = localStorage.getItem("frameflow_local");
+        if (saved) setProjects(JSON.parse(saved));
+      } catch {}
       return;
     }
     setSyncStatus("loading");
     dbLoad()
       .then(rows => {
-        if (rows && rows.length > 0) {
-          setProjects(rows);
-        } else {
-          // Nothing in DB yet — seed with sample data and save it up
-          setProjects(INITIAL_PROJECTS);
-          INITIAL_PROJECTS.forEach(p => dbSaveProject(p));
-        }
+        if (rows) setProjects(rows);
         setSyncStatus("idle");
-        loadedRef.current = true;
       })
       .catch(() => {
-        // Offline — fall back to localStorage
+        // Fall back to localStorage if offline
         try {
-          const saved = localStorage.getItem("nsg-video-tracker_local");
-          setProjects(saved ? JSON.parse(saved) : INITIAL_PROJECTS);
-        } catch {
-          setProjects(INITIAL_PROJECTS);
-        }
+          const saved = localStorage.getItem("frameflow_local");
+          if (saved) setProjects(JSON.parse(saved));
+        } catch {}
         setSyncStatus("error");
-        loadedRef.current = true;
       });
   }, []);
 
-  // ── Save to Supabase whenever projects change (skip the initial load) ──
+  // Save to Supabase (and localStorage backup) whenever projects change
   useEffect(() => {
-    if (projects === null) return;       // not ready yet
-    if (!loadedRef.current) return;      // still on initial load, don't overwrite DB
+    if (prevProjects === null) { setPrevProjects(projects); return; }
+    if (prevProjects === projects) return;
+    setPrevProjects(projects);
 
     // Always keep a local backup
-    try { localStorage.setItem("nsg-video-tracker_local", JSON.stringify(projects)); } catch {}
+    try { localStorage.setItem("frameflow_local", JSON.stringify(projects)); } catch {}
 
     if (!configured) return;
 
     setSyncStatus("saving");
-    Promise.all(projects.map(p => dbSaveProject(p)))
+
+    // Find added/changed projects vs previous
+    const changed = projects.filter(p => {
+      const old = prevProjects.find(o => o.id === p.id);
+      return !old || JSON.stringify(old) !== JSON.stringify(p);
+    });
+    // Find deleted projects
+    const deleted = prevProjects.filter(o => !projects.find(p => p.id === o.id));
+
+    Promise.all([
+      ...changed.map(p => dbSaveProject(p)),
+      ...deleted.map(p => dbDeleteProject(p.id)),
+    ])
       .then(() => setSyncStatus("idle"))
       .catch(() => setSyncStatus("error"));
   }, [projects]);
@@ -1773,19 +1804,6 @@ function App() {
         fontSize: 11, color: "#15803D", fontWeight: 600 }}>✓ Synced</div>
     );
   };
-
-  // Show a full-screen loader while fetching from Supabase
-  if (projects === null) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
-        minHeight: "100vh", background: "#F7F7F8", flexDirection: "column", gap: 16 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: BRAND,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 20, fontWeight: 900, color: "#fff" }}>▶</div>
-        <div style={{ fontSize: 14, color: "#6B7280", fontWeight: 500 }}>Loading NSG Video Project Tracker…</div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#F7F7F8", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
