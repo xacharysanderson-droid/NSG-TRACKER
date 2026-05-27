@@ -377,7 +377,7 @@ function Nav({ view, setView, projects }) {
             fontSize: 16, fontWeight: 900, color: "#fff",
           }}>▶</div>
           <div>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.3 }}>FrameFlow</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15, letterSpacing: -0.3 }}>NSG Video Project Tracker</div>
             <div style={{ color: "#555", fontSize: 11 }}>Video Production</div>
           </div>
         </div>
@@ -733,6 +733,7 @@ function ProjectDetail({ project, setProjects, onBack }) {
 
   const deleteProject = () => {
     setProjects(prev => prev.filter(p => p.id !== proj.id));
+    if (configured) dbDeleteProject(proj.id).catch(() => {});
     onBack();
   };
 
@@ -1669,8 +1670,8 @@ function Analytics({ projects }) {
 
 // ─── Supabase Config ─────────────────────────────────────────────────────────
 // Paste your Supabase Project URL and anon key here
-const SUPABASE_URL = "YOUR_SUPABASE_URL";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://imnizeygtgmkseiuheeh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imltbml6ZXlndGdta3NlaXVoZWVoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODc4NjMsImV4cCI6MjA5NTM2Mzg2M30.tdkTzZgfiGPYQTon0-eOsmoaEVZkREZGEDvkXensmGY";
 
 // Each project is stored as a row: { id, data: {...}, updated_at }
 async function dbLoad() {
@@ -1713,68 +1714,59 @@ const configured = SUPABASE_URL !== "YOUR_SUPABASE_URL";
 
 function App() {
   const [view, setView] = useState("dashboard");
-  const [projects, setProjects] = useState(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [syncStatus, setSyncStatus] = useState("idle"); // idle | loading | saving | error
-  const [prevProjects, setPrevProjects] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("loading");
+  const loadedRef = React.useRef(false);
 
-  // On mount: load from Supabase (or fall back to localStorage)
+  // On mount: load from Supabase first, fall back to localStorage
   useEffect(() => {
     if (!configured) {
       try {
-        const saved = localStorage.getItem("frameflow_local");
-        if (saved) setProjects(JSON.parse(saved));
-      } catch {}
+        const saved = localStorage.getItem("nsg_local");
+        setProjects(saved ? JSON.parse(saved) : INITIAL_PROJECTS);
+      } catch { setProjects(INITIAL_PROJECTS); }
+      setSyncStatus("idle");
+      loadedRef.current = true;
       return;
     }
     setSyncStatus("loading");
     dbLoad()
       .then(rows => {
-        if (rows) setProjects(rows);
+        if (rows && rows.length > 0) {
+          setProjects(rows);
+        } else {
+          setProjects(INITIAL_PROJECTS);
+          INITIAL_PROJECTS.forEach(p => dbSaveProject(p));
+        }
         setSyncStatus("idle");
+        loadedRef.current = true;
       })
       .catch(() => {
-        // Fall back to localStorage if offline
         try {
-          const saved = localStorage.getItem("frameflow_local");
-          if (saved) setProjects(JSON.parse(saved));
-        } catch {}
+          const saved = localStorage.getItem("nsg_local");
+          setProjects(saved ? JSON.parse(saved) : INITIAL_PROJECTS);
+        } catch { setProjects(INITIAL_PROJECTS); }
         setSyncStatus("error");
+        loadedRef.current = true;
       });
   }, []);
 
-  // Save to Supabase (and localStorage backup) whenever projects change
+  // Save to Supabase whenever projects change (skip initial load)
   useEffect(() => {
-    if (prevProjects === null) { setPrevProjects(projects); return; }
-    if (prevProjects === projects) return;
-    setPrevProjects(projects);
-
-    // Always keep a local backup
-    try { localStorage.setItem("frameflow_local", JSON.stringify(projects)); } catch {}
-
+    if (projects === null) return;
+    if (!loadedRef.current) return;
+    try { localStorage.setItem("nsg_local", JSON.stringify(projects)); } catch {}
     if (!configured) return;
-
     setSyncStatus("saving");
-
-    // Find added/changed projects vs previous
-    const changed = projects.filter(p => {
-      const old = prevProjects.find(o => o.id === p.id);
-      return !old || JSON.stringify(old) !== JSON.stringify(p);
-    });
-    // Find deleted projects
-    const deleted = prevProjects.filter(o => !projects.find(p => p.id === o.id));
-
-    Promise.all([
-      ...changed.map(p => dbSaveProject(p)),
-      ...deleted.map(p => dbDeleteProject(p.id)),
-    ])
+    Promise.all(projects.map(p => dbSaveProject(p)))
       .then(() => setSyncStatus("idle"))
       .catch(() => setSyncStatus("error"));
   }, [projects]);
 
   // Sync selected project when projects update
   useEffect(() => {
-    if (selectedProject) {
+    if (selectedProject && projects) {
       const updated = projects.find(p => p.id === selectedProject.id);
       if (updated) setSelectedProject(updated);
     }
@@ -1804,6 +1796,18 @@ function App() {
         fontSize: 11, color: "#15803D", fontWeight: 600 }}>✓ Synced</div>
     );
   };
+
+  if (projects === null) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+        minHeight: "100vh", background: "#F7F7F8", flexDirection: "column", gap: 16 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: BRAND,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 20, fontWeight: 900, color: "#fff" }}>▶</div>
+        <div style={{ fontSize: 14, color: "#6B7280", fontWeight: 500 }}>Loading NSG Video Project Tracker…</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#F7F7F8", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
